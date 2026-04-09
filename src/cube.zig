@@ -5,7 +5,7 @@ const Segment = @import("segment.zig").Segment;
 
 pub const Cube = struct {
     position: rl.Vector3,
-    size: rl.Vector3 = .init(10, 10, 10),
+    size: rl.Vector3 = .init(3, 3, 3),
     color: rl.Color = .red,
 
     pub fn toSegments(self: Cube, allocator: Allocator) ![]Segment {

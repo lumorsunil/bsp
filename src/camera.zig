@@ -3,10 +3,10 @@ const rl = @import("raylib");
 
 pub const CameraWrapped = struct {
     pitch: f32 = 0,
-    yaw: f32 = 0,
-    dir: rl.Vector3 = .init(0, 0, 1),
+    yaw: f32 = 180,
+    dir: rl.Vector3 = .init(0, 0, -1),
     camera: rl.Camera3D = .{
-        .position = .init(0, 0.5, -3),
+        .position = .init(0, 0.5, 15),
         .projection = .perspective,
         .target = .init(0, 0, 0),
         .up = .init(0, 1, 0),

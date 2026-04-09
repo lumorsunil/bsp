@@ -62,8 +62,10 @@ pub const Input = struct {
 
     pub fn updatePhysics(
         self: *Input,
+        allocator: Allocator,
         camera: *CameraWrapped,
         root: BSPNode,
+        collision_node_path: *[]BSPNode,
     ) void {
         const dt = rl.getFrameTime();
 
@@ -71,33 +73,43 @@ pub const Input = struct {
         self.velocity = self.velocity.clampValue(-max_velocity, max_velocity);
         self.velocity = self.velocity.scale(1 - friction_factor * dt);
 
-        var resolved_position = camera.camera.position.add(self.velocity.scale(dt));
+        const first_try_position = camera.camera.position.add(self.velocity.scale(dt));
+        const second_try_position = self.updatePlayerCollision(allocator, camera, first_try_position, root, collision_node_path);
+        const resolved_position = self.updatePlayerCollision(allocator, camera, second_try_position, root, null);
 
-        var intersection_info = IntersectionInfo{};
+        camera.camera.position = resolved_position;
+    }
+
+    fn updatePlayerCollision(
+        self: *Input,
+        allocator: Allocator,
+        camera: *CameraWrapped,
+        try_position: rl.Vector3,
+        root: BSPNode,
+        collision_node_path: ?*[]BSPNode,
+    ) rl.Vector3 {
+        const dt = rl.getFrameTime();
+
+        var intersection_info = IntersectionInfo.init(allocator);
+        defer intersection_info.deinit();
         if (Collision.sweepCircle(
             camera.camera.position,
-            resolved_position,
+            try_position,
             player_radius,
-            // self.acceleration,
-            // self.velocity,
             root,
             &intersection_info,
         )) |_| brk: {
-            std.log.debug("COLLISION DETECTED", .{});
             const node = intersection_info.node orelse break :brk;
-            // const collision_wall = node.branch.splitter_vec;
+            if (collision_node_path) |cnp| cnp.* = intersection_info.node_path.toOwnedSlice(intersection_info.allocator) catch unreachable;
             const node_normal = node.branch.splitter_normal;
-            const overbounce = rl.Vector3.init(node_normal.x, 0, node_normal.y).scale(0.01);
+            const overbounce = rl.Vector3.init(node_normal.x, 0, node_normal.y).scale(0.001);
             const velocity_2D = rl.Vector2.init(self.velocity.x, self.velocity.z);
-            const new_velocity = velocity_2D.subtract(node_normal.scale(velocity_2D.dotProduct(node_normal)));
+            const new_velocity_mag = velocity_2D.dotProduct(node_normal);
+            const new_velocity = velocity_2D.subtract(node_normal.scale(new_velocity_mag));
             self.velocity = .init(new_velocity.x, 0, new_velocity.y);
-            // const collision_wall_3D = rl.Vector3.init(collision_wall.x, 0, collision_wall.y);
-            // const collision_scale = self.velocity.dotProduct(collision_wall_3D);
-            // self.velocity = collision_wall_3D.normalize().scale(collision_scale);
-            resolved_position = camera.camera.position.add(self.velocity.scale(dt)).add(overbounce);
-            std.log.debug("COLLISION: {}", .{node.branch.segment_id});
+            return camera.camera.position.add(self.velocity.scale(dt)).add(overbounce);
         }
 
-        camera.camera.position = resolved_position;
+        return try_position;
     }
 };

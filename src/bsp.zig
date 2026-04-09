@@ -244,4 +244,25 @@ pub const BSPBranch = struct {
     ) std.Io.Writer.Error!void {
         try writer.print("branch {{ id: {}, front: {f}, back: {f} }}", .{ self.segment_id, self.front, self.back });
     }
+
+    const LineFormatter = struct {
+        branch: BSPBranch,
+
+        pub fn format(
+            self: @This(),
+            writer: *std.Io.Writer,
+        ) std.Io.Writer.Error!void {
+            try writer.print("{} [({}, {}), ({}, {})]", .{
+                self.branch.segment_id,
+                self.branch.splitter_p0.x,
+                self.branch.splitter_p0.y,
+                self.branch.splitter_p1.x,
+                self.branch.splitter_p1.y,
+            });
+        }
+    };
+
+    pub fn formatLine(self: @This()) LineFormatter {
+        return .{ .branch = self };
+    }
 };

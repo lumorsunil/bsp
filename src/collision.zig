@@ -9,8 +9,33 @@ const isOnFront = @import("segment.zig").isOnFront;
 const cross = @import("segment.zig").cross;
 
 pub const IntersectionInfo = struct {
+    allocator: Allocator,
     node: ?BSPNode = null,
     object_pos: ?rl.Vector3 = null,
+    log_: std.ArrayList([]const u8) = .empty,
+    node_path: std.ArrayList(BSPNode) = .empty,
+
+    pub fn init(allocator: Allocator) @This() {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn deinit(self: *IntersectionInfo) void {
+        self.log_.deinit(self.allocator);
+        self.node_path.deinit(self.allocator);
+    }
+
+    pub fn log(
+        self: *IntersectionInfo,
+        comptime fmt: []const u8,
+        args: anytype,
+    ) void {
+        const s = std.fmt.allocPrint(self.allocator, fmt, args) catch return;
+        self.log_.append(self.allocator, s) catch return;
+    }
+
+    pub fn addNode(self: *IntersectionInfo, node: BSPNode) void {
+        self.node_path.append(self.allocator, node) catch return;
+    }
 };
 
 pub const Collision = struct {
@@ -72,21 +97,15 @@ pub const Collision = struct {
         start: rl.Vector3,
         end: rl.Vector3,
         radius: f32,
-        // acceleration: rl.Vector3,
-        // velocity: rl.Vector3,
         start_node: BSPNode,
         intersection_info: ?*IntersectionInfo,
     ) ?rl.Vector3 {
         const start_pos = rl.Vector2.init(start.x, start.z);
         const end_pos = rl.Vector2.init(end.x, end.z);
-        // const accel = rl.Vector2.init(acceleration.x, acceleration.z);
-        // const vel = rl.Vector2.init(velocity.x, velocity.z);
         const intersection_point = sweepCircle_(
             start_pos,
             end_pos,
             radius,
-            // accel,
-            // vel,
             null,
             start_node,
             intersection_info,
@@ -133,6 +152,8 @@ pub const Collision = struct {
             if (intersection_info) |ii| {
                 ii.node = last_split;
                 ii.object_pos = .init(start_pos.x, 0, start_pos.y);
+                ii.addNode(last_split.?);
+                for (ii.log_.items, 0..) |l, i| std.log.debug("C{}: {s}", .{ i, l });
             }
             const intersection_point = start_pos.subtract(last_split.?.branch.splitter_normal.scale(radius));
             return intersection_point;
@@ -142,11 +163,23 @@ pub const Collision = struct {
 
         if (@abs(denominator) < std.math.floatEps(f32)) {
             const is_on_front_1 = isOnFront(start_pos.subtract(node.branch.splitter_p0), node.branch.splitter_vec);
-            const side = if (is_on_front_1) node.branch.front else node.branch.back;
-            // const end_distance = end_pos.subtract(node.branch.splitter_p0).dotProduct(node.branch.splitter_normal);
-            // if (end_distance <= radius)
+            const end_distance = end_pos.subtract(node.branch.splitter_p0).dotProduct(node.branch.splitter_normal);
 
-            // TODO: add a check for the end point if it has intersected the line, in that case do a split
+            if (@abs(end_distance) <= radius) {
+                const start_side = if (is_on_front_1) node.branch.front else node.branch.back;
+                const end_side = if (is_on_front_1) node.branch.back else node.branch.front;
+
+                if (intersection_info) |ii| ii.log("change in distance low, split {f}", .{node.branch.formatLine()});
+                if (intersection_info) |ii| ii.addNode(node);
+
+                if (sweepCircle_(start_pos, end_pos, radius, node, start_side, intersection_info)) |intersection_point| return intersection_point;
+                return sweepCircle_(start_pos, end_pos, radius, node, end_side, intersection_info);
+            }
+
+            const side = if (is_on_front_1) node.branch.front else node.branch.back;
+
+            if (intersection_info) |ii| ii.log("change in distance low, no split {f}", .{node.branch.formatLine()});
+            if (intersection_info) |ii| ii.addNode(node);
 
             return sweepCircle_(start_pos, end_pos, radius, last_split, side, intersection_info);
         }
@@ -162,24 +195,31 @@ pub const Collision = struct {
             const start_side = if (is_on_front_1) node.branch.front else node.branch.back;
             const end_side = if (is_on_front_1) node.branch.back else node.branch.front;
 
+            if (intersection_info) |ii| ii.log("split {f}", .{node.branch.formatLine()});
+            if (intersection_info) |ii| ii.addNode(node);
+
             if (sweepCircle_(start_pos, mid, radius, node, start_side, intersection_info)) |intersection_point| return intersection_point;
             return sweepCircle_(mid, end_pos, radius, node, end_side, intersection_info);
         } else {
             const is_on_front_1 = isOnFront(start_pos.subtract(node.branch.splitter_p0), node.branch.splitter_vec);
+            const start_distance = start_pos.subtract(node.branch.splitter_p0).dotProduct(node.branch.splitter_normal);
+
+            if (@abs(start_distance) <= radius) {
+                const start_side = if (is_on_front_1) node.branch.front else node.branch.back;
+                const end_side = if (is_on_front_1) node.branch.back else node.branch.front;
+
+                if (intersection_info) |ii| ii.log("split even when no intersection {f}", .{node.branch.formatLine()});
+                if (intersection_info) |ii| ii.addNode(node);
+
+                if (sweepCircle_(start_pos, end_pos, radius, node, start_side, intersection_info)) |intersection_point| return intersection_point;
+                return sweepCircle_(start_pos, end_pos, radius, node, end_side, intersection_info);
+            }
+
+            if (intersection_info) |ii| ii.log("no intersection {f}", .{node.branch.formatLine()});
+            if (intersection_info) |ii| ii.addNode(node);
+
             const side = if (is_on_front_1) node.branch.front else node.branch.back;
             return sweepCircle_(start_pos, end_pos, radius, last_split, side, intersection_info);
         }
-    }
-
-    fn calcDistanceLine(
-        dir1: rl.Vector2,
-        pos1: rl.Vector2,
-        dir2: rl.Vector2,
-        pos2: rl.Vector2,
-    ) f32 {
-        const t = cross(pos2.subtract(pos1), dir2) / cross(dir1, dir2);
-        const i = pos1.add(dir1.scale(t));
-
-        return pos1.distance(i);
     }
 };

@@ -11,6 +11,7 @@ const Models = @import("segment.zig").Models;
 const Collision = @import("collision.zig").Collision;
 const Cube = @import("cube.zig").Cube;
 const IntersectionInfo = @import("collision.zig").IntersectionInfo;
+const BSPNode = @import("bsp.zig").BSPNode;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -25,7 +26,7 @@ pub fn main() !void {
 
     const seed = 1;
 
-    var map = try Map.random(allocator, seed, 2, .init(30, 30));
+    var map = try Map.random(allocator, seed, 20, .init(50, 50));
     const input_segments = try map.toSegments(allocator);
     var models = Models{};
     try models.buildWallModels(allocator, input_segments);
@@ -39,7 +40,9 @@ pub fn main() !void {
     var hit_cube_ends_at: f64 = 0;
     var object_cube: ?Cube = null;
     var object_cube_ends_at: f64 = 0;
-    var intersection_info = IntersectionInfo{};
+    var intersection_info = IntersectionInfo.init(allocator);
+    defer intersection_info.deinit();
+    var collision_node_path: []BSPNode = &.{};
 
     while (!rl.windowShouldClose()) {
         rl.beginDrawing();
@@ -72,7 +75,7 @@ pub fn main() !void {
         }
 
         input.updateInput(&camera);
-        input.updatePhysics(&camera, bsp.root);
+        input.updatePhysics(allocator, &camera, bsp.root, &collision_node_path);
         camera.update();
 
         if (input.shooting) {
@@ -108,6 +111,8 @@ pub fn main() !void {
             }
         }
 
+        drawCollisionNodePath(collision_node_path);
+
         rl.endMode3D();
 
         drawCrosshair();
@@ -133,4 +138,24 @@ fn drawDebugSegments(bsp: *BSP, bsp_traverser: *BSPTraverser) void {
     for (bsp_traverser.segment_ids.items) |id| {
         bsp.segments.items[id].draw();
     }
+}
+
+fn drawCollisionNodePath(collision_node_path: []BSPNode) void {
+    const t = rl.getTime();
+    const i = @mod(@as(usize, @intFromFloat(@floor(t))), collision_node_path.len + 1);
+
+    if (i == 0) return;
+
+    const node = collision_node_path[i - 1];
+
+    if (node != .branch) return;
+
+    const p0 = node.branch.splitter_p0;
+    const p1 = node.branch.splitter_p1;
+    const start = rl.Vector3.init(p0.x, 0, p0.y);
+    const end = rl.Vector3.init(p1.x, 0, p1.y);
+    const size = end.subtract(start).add(.init(0, 1, 0));
+    const center = start.add(end.subtract(start).scale(0.5));
+    const color: rl.Color = if (i == collision_node_path.len) .red else .yellow;
+    rl.drawCubeV(center, size, color);
 }
