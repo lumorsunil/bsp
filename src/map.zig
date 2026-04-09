@@ -23,7 +23,15 @@ pub const Map = struct {
         for (self.cubes.items) |cube| cube.draw();
     }
 
-    pub fn random(allocator: Allocator, number_of_cubes: usize, size: rl.Vector2) !Map {
+    pub fn random(
+        allocator: Allocator,
+        seed: u64,
+        number_of_cubes: usize,
+        size: rl.Vector2,
+    ) !Map {
+        var prng = std.Random.DefaultPrng.init(seed);
+        const rnd = prng.random();
+
         var map = Map{};
 
         const colors = [_]rl.Color{
@@ -39,8 +47,8 @@ pub const Map = struct {
         };
 
         for (0..number_of_cubes) |i| {
-            const x = std.crypto.random.float(f32) * size.x - size.x / 2;
-            const z = std.crypto.random.float(f32) * size.y - size.y / 2;
+            const x = rnd.float(f32) * size.x - size.x / 2;
+            const z = rnd.float(f32) * size.y - size.y / 2;
 
             try map.cubes.append(allocator, .{
                 .position = .init(x, 0, z),

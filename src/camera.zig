@@ -6,11 +6,11 @@ pub const CameraWrapped = struct {
     yaw: f32 = 0,
     dir: rl.Vector3 = .init(0, 0, 1),
     camera: rl.Camera3D = .{
-        .position = .init(0, 0, -200),
+        .position = .init(0, 0.5, -3),
         .projection = .perspective,
         .target = .init(0, 0, 0),
         .up = .init(0, 1, 0),
-        .fovy = 45,
+        .fovy = 95,
     },
 
     const speed: f32 = 0.1;
