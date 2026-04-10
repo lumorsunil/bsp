@@ -38,33 +38,32 @@ pub const BSPTraverser = struct {
 };
 
 pub const BSP = struct {
-    root: BSPNode = .empty,
+    root: *BSPNode,
+    nodes: std.ArrayList(*BSPNode) = .empty,
     segments: std.ArrayList(Segment) = .empty,
     num_front: usize = 0,
     num_back: usize = 0,
     num_splits: usize = 0,
-    arena: std.heap.ArenaAllocator,
 
-    pub fn init(allocator: Allocator) BSP {
+    pub fn init(allocator: Allocator) !BSP {
+        const root = try allocator.create(BSPNode);
+        root.* = .empty;
+
         return .{
-            .arena = .init(allocator),
+            .root = root,
         };
-    }
-
-    pub fn deinit(self: *BSP) void {
-        self.arena.deinit();
     }
 
     pub fn build(allocator: Allocator, input_segments: []Segment) !BSP {
         const seed = try find_best_seed(allocator, input_segments);
-        return build_with_seed(allocator, input_segments, seed);
+        return build_with_seed(input_segments, seed);
     }
 
     pub fn build_with_seed(allocator: Allocator, input_segments: []Segment, seed: u64) !BSP {
-        var bsp = BSP.init(allocator);
+        var bsp = try BSP.init(allocator);
         var random = get_random(seed);
         random.random().shuffle(Segment, input_segments);
-        try bsp.build_bsp_tree(&bsp.root, input_segments);
+        try bsp.build_bsp_tree(allocator, bsp.root, input_segments);
         return bsp;
     }
 
@@ -84,8 +83,9 @@ pub const BSP = struct {
 
         for (start_seed..end_seed) |seed| {
             for (input_segments, segments) |s, *s_| s_.* = s;
-            var bsp = try build_with_seed(allocator, segments, seed);
-            defer bsp.deinit();
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            defer arena.deinit();
+            var bsp = try build_with_seed(arena.allocator(), segments, seed);
             const score = bsp.calculate_score();
             if (score < best_score) {
                 best_score = score;
@@ -105,6 +105,7 @@ pub const BSP = struct {
 
     pub fn split_space(
         self: *BSP,
+        allocator: Allocator,
         node: *BSPNode,
         input_segments: []Segment,
     ) !struct { []Segment, []Segment } {
@@ -112,7 +113,7 @@ pub const BSP = struct {
 
         const splitter_segment = &input_segments[0];
 
-        node.* = .{ .branch = try self.arena.allocator().create(BSPBranch) };
+        node.* = .{ .branch = try allocator.create(BSPBranch) };
         const branch = node.branch;
         branch.* = .{};
 
@@ -120,7 +121,6 @@ pub const BSP = struct {
         branch.splitter_p0 = splitter_segment.position.@"0";
         branch.splitter_p1 = splitter_segment.position.@"1";
         branch.splitter_normal = branch.splitter_vec.rotate(-std.math.pi / 2.0).normalize();
-        branch.splitter_mid = branch.splitter_p0.add(branch.splitter_vec.scale(0.5));
 
         var front_segments = std.ArrayList(Segment).empty;
         var back_segments = std.ArrayList(Segment).empty;
@@ -135,7 +135,7 @@ pub const BSP = struct {
             const denominator_is_zero = @abs(denominator) < eps;
 
             if (numerator_is_zero and denominator_is_zero) {
-                try front_segments.append(self.arena.allocator(), segment);
+                try front_segments.append(allocator, segment);
                 continue;
             } else if (!denominator_is_zero) {
                 const intersection = numerator / denominator;
@@ -157,28 +157,29 @@ pub const BSP = struct {
                         l_segment = t_segment;
                     }
 
-                    try front_segments.append(self.arena.allocator(), r_segment);
-                    try back_segments.append(self.arena.allocator(), l_segment);
+                    try front_segments.append(allocator, l_segment);
+                    try back_segments.append(allocator, r_segment);
 
                     continue;
                 }
             }
 
             if (numerator < 0 or (numerator_is_zero and denominator > 0)) {
-                try back_segments.append(self.arena.allocator(), segment);
+                try back_segments.append(allocator, segment);
             } else if (numerator > 0 or (numerator_is_zero and denominator < 0)) {
-                try front_segments.append(self.arena.allocator(), segment);
+                try front_segments.append(allocator, segment);
             }
         }
 
         splitter_segment.node = node;
-        branch.segment_id = try self.add_segment(self.arena.allocator(), splitter_segment);
+        branch.segment_id = try self.add_segment(allocator, splitter_segment);
         splitter_segment.id = branch.segment_id;
         self.segments.items[branch.segment_id].id = branch.segment_id;
+        try self.nodes.append(allocator, node);
 
         return .{
-            try front_segments.toOwnedSlice(self.arena.allocator()),
-            try back_segments.toOwnedSlice(self.arena.allocator()),
+            try front_segments.toOwnedSlice(allocator),
+            try back_segments.toOwnedSlice(allocator),
         };
     }
 
@@ -190,10 +191,11 @@ pub const BSP = struct {
 
     pub fn build_bsp_tree(
         self: *BSP,
+        allocator: Allocator,
         node: *BSPNode,
         input_segments: []Segment,
     ) !void {
-        const front_segments, const back_segments = try self.split_space(node, input_segments);
+        const front_segments, const back_segments = try self.split_space(allocator, node, input_segments);
 
         if (node.* != .branch) return;
 
@@ -202,12 +204,12 @@ pub const BSP = struct {
 
         if (front_segments.len > 0) {
             self.num_front += 1;
-            try self.build_bsp_tree(&node.branch.front, front_segments);
+            try self.build_bsp_tree(allocator, &node.branch.front, front_segments);
         }
 
         if (back_segments.len > 0) {
             self.num_back += 1;
-            try self.build_bsp_tree(&node.branch.back, back_segments);
+            try self.build_bsp_tree(allocator, &node.branch.back, back_segments);
         }
     }
 };
@@ -236,7 +238,6 @@ pub const BSPBranch = struct {
     splitter_p0: rl.Vector2 = .init(0, 0),
     splitter_p1: rl.Vector2 = .init(0, 0),
     splitter_normal: rl.Vector2 = .init(0, 0),
-    splitter_mid: rl.Vector2 = .init(0, 0),
 
     pub fn format(
         self: @This(),

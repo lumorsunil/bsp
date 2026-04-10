@@ -12,6 +12,7 @@ pub const Input = struct {
     velocity: rl.Vector3 = .init(0, 0, 0),
     shooting: bool = false,
     shooting_alt: bool = false,
+    toggle_map: bool = false,
 
     const max_velocity = 10;
     const friction_factor = 10;
@@ -45,6 +46,8 @@ pub const Input = struct {
             self.acceleration = self.acceleration.add(d);
             // camera.camera.position = camera.camera.position.add(d);
         }
+
+        self.toggle_map = rl.isKeyPressed(.m);
 
         if (rl.isKeyDown(.space)) {
             camera.camera.position = camera.camera.position.add(.init(0, self.speed * dt * dt, 0));

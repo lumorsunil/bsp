@@ -52,40 +52,40 @@ pub const Map = struct {
 
         var map = Map{};
 
-        const colors = [_]rl.Color{
-            .red,
-            .blue,
-            .yellow,
-            .green,
-            .purple,
-            .maroon,
-            .violet,
-            .beige,
-            .brown,
-        };
+        // const colors = [_]rl.Color{
+        //     .red,
+        //     .blue,
+        //     .yellow,
+        //     .green,
+        //     .purple,
+        //     .maroon,
+        //     .violet,
+        //     .beige,
+        //     .brown,
+        // };
 
-        for (0..number_of_cubes) |i| {
-            const x = rnd.float(f32) * size.x - size.x / 2;
-            const z = rnd.float(f32) * size.y - size.y / 2;
-
-            try map.cubes.append(allocator, .{
-                .position = .init(x, 0, z),
-                .color = colors[@mod(i, colors.len)],
-            });
-        }
-
-        // for (0..number_of_cubes) |_| {
+        // for (0..number_of_cubes) |i| {
         //     const x = rnd.float(f32) * size.x - size.x / 2;
         //     const z = rnd.float(f32) * size.y - size.y / 2;
         //
-        //     const walls = try generatePolygon(allocator, .init(x, z));
-        //     try map.walls.appendSlice(allocator, walls);
-        //
-        //     // try map.cubes.append(allocator, .{
-        //     //     .position = .init(x, 0, z),
-        //     //     .color = colors[@mod(i, colors.len)],
-        //     // });
+        //     try map.cubes.append(allocator, .{
+        //         .position = .init(x, 0, z),
+        //         .color = colors[@mod(i, colors.len)],
+        //     });
         // }
+
+        for (0..number_of_cubes) |_| {
+            const x = rnd.float(f32) * size.x - size.x / 2;
+            const z = rnd.float(f32) * size.y - size.y / 2;
+
+            const walls = try generatePolygon(allocator, .init(x, z));
+            try map.walls.appendSlice(allocator, walls);
+
+            // try map.cubes.append(allocator, .{
+            //     .position = .init(x, 0, z),
+            //     .color = colors[@mod(i, colors.len)],
+            // });
+        }
 
         return map;
     }

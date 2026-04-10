@@ -14,6 +14,9 @@ pub const IntersectionInfo = struct {
     object_pos: ?rl.Vector3 = null,
     log_: std.ArrayList([]const u8) = .empty,
     node_path: std.ArrayList(BSPNode) = .empty,
+    ray_path: std.ArrayList(Ray) = .empty,
+
+    pub const Ray = struct { rl.Vector2, rl.Vector2 };
 
     pub fn init(allocator: Allocator) @This() {
         return .{ .allocator = allocator };
@@ -22,6 +25,7 @@ pub const IntersectionInfo = struct {
     pub fn deinit(self: *IntersectionInfo) void {
         self.log_.deinit(self.allocator);
         self.node_path.deinit(self.allocator);
+        self.ray_path.deinit(self.allocator);
     }
 
     pub fn log(
@@ -47,6 +51,7 @@ pub const Collision = struct {
     ) ?rl.Vector3 {
         const start_pos = rl.Vector2.init(start.x, start.z);
         const end_pos = rl.Vector2.init(end.x, end.z);
+        if (intersection_info) |ii| ii.ray_path.clearRetainingCapacity();
         const intersection_point = castRay_(start_pos, end_pos, null, start_node, intersection_info) orelse return null;
         return .init(intersection_point.x, start.y, intersection_point.y);
     }
@@ -58,17 +63,23 @@ pub const Collision = struct {
         node: BSPNode,
         intersection_info: ?*IntersectionInfo,
     ) ?rl.Vector2 {
-        if (node == .empty) return null;
+        if (node == .empty) {
+            if (intersection_info) |ii| {
+                ii.ray_path.append(ii.allocator, .{ start_pos, end_pos }) catch {};
+            }
+            return null;
+        }
         if (node == .solid) {
             if (intersection_info) |ii| {
                 ii.node = last_split;
                 ii.object_pos = .init(start_pos.x, 0, start_pos.y);
+                ii.ray_path.append(ii.allocator, .{ start_pos, end_pos }) catch {};
             }
             return start_pos;
         }
 
-        const p1 = start_pos.subtract(node.branch.splitter_mid);
-        const p2 = end_pos.subtract(node.branch.splitter_mid);
+        const p1 = start_pos.subtract(node.branch.splitter_p0);
+        const p2 = end_pos.subtract(node.branch.splitter_p0);
         const t1 = p1.dotProduct(node.branch.splitter_normal);
         const t2 = p2.dotProduct(node.branch.splitter_normal);
 
