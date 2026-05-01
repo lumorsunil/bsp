@@ -15,6 +15,7 @@ pub const IntersectionInfo = struct {
     log_: std.ArrayList([]const u8) = .empty,
     node_path: std.ArrayList(BSPNode) = .empty,
     ray_path: std.ArrayList(Ray) = .empty,
+    sweep_path: std.ArrayList(Ray) = .empty,
 
     pub const Ray = struct { rl.Vector2, rl.Vector2 };
 
@@ -26,6 +27,7 @@ pub const IntersectionInfo = struct {
         self.log_.deinit(self.allocator);
         self.node_path.deinit(self.allocator);
         self.ray_path.deinit(self.allocator);
+        self.sweep_path.deinit(self.allocator);
     }
 
     pub fn log(
@@ -70,6 +72,11 @@ pub const Collision = struct {
             return null;
         }
         if (node == .solid) {
+            // Sometimes a ray split is very small probably due to precision issues when splitting against a segment that essentially lies on the same plane as the child, so this check will cull any tiny ray vectors when matching against a solid leaf
+            if (end_pos.subtract(start_pos).length() <= std.math.floatEps(f32) * 1000) {
+                return null;
+            }
+
             if (intersection_info) |ii| {
                 ii.node = last_split;
                 ii.object_pos = .init(start_pos.x, 0, start_pos.y);
@@ -113,6 +120,7 @@ pub const Collision = struct {
     ) ?rl.Vector3 {
         const start_pos = rl.Vector2.init(start.x, start.z);
         const end_pos = rl.Vector2.init(end.x, end.z);
+        if (intersection_info) |ii| ii.sweep_path.clearRetainingCapacity();
         const intersection_point = sweepCircle_(
             start_pos,
             end_pos,
@@ -158,13 +166,26 @@ pub const Collision = struct {
     ) ?rl.Vector2 {
         const velocity = end_pos.subtract(start_pos);
 
-        if (node == .empty) return null;
+        if (node == .empty) {
+            if (intersection_info) |ii| {
+                ii.sweep_path.append(ii.allocator, .{ start_pos, end_pos }) catch {};
+            }
+
+            return null;
+        }
         if (node == .solid) {
+            // NOTE: Sometimes a ray split is very small probably due to precision issues when splitting against a segment that essentially lies on the same plane as the child, so this check will cull any tiny ray vectors when matching against a solid leaf
+            // NOTE: There's probably another way to fix this more mathematically robust
+            if (end_pos.subtract(start_pos).length() <= std.math.floatEps(f32) * 100000) {
+                return null;
+            }
+
             if (intersection_info) |ii| {
                 ii.node = last_split;
                 ii.object_pos = .init(start_pos.x, 0, start_pos.y);
                 ii.addNode(last_split.?);
                 for (ii.log_.items, 0..) |l, i| std.log.debug("C{}: {s}", .{ i, l });
+                ii.sweep_path.append(ii.allocator, .{ start_pos, end_pos }) catch {};
             }
             const intersection_point = start_pos.subtract(last_split.?.branch.splitter_normal.scale(radius));
             return intersection_point;
@@ -215,9 +236,11 @@ pub const Collision = struct {
             const is_on_front_1 = isOnFront(start_pos.subtract(node.branch.splitter_p0), node.branch.splitter_vec);
             const start_distance = start_pos.subtract(node.branch.splitter_p0).dotProduct(node.branch.splitter_normal);
 
-            if (@abs(start_distance) <= radius) {
+            if (@abs(start_distance) < radius) {
                 const start_side = if (is_on_front_1) node.branch.front else node.branch.back;
                 const end_side = if (is_on_front_1) node.branch.back else node.branch.front;
+
+                // TODO: when we get stuck we are in here for some reason or another
 
                 if (intersection_info) |ii| ii.log("split even when no intersection {f}", .{node.branch.formatLine()});
                 if (intersection_info) |ii| ii.addNode(node);

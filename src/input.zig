@@ -16,7 +16,7 @@ pub const Input = struct {
 
     const max_velocity = 10;
     const friction_factor = 10;
-    const player_radius = 1;
+    const player_radius = 0.3;
 
     pub fn updateInput(self: *Input, camera: *CameraWrapped) void {
         const dt = rl.getFrameTime();
@@ -69,6 +69,7 @@ pub const Input = struct {
         camera: *CameraWrapped,
         root: BSPNode,
         collision_node_path: *[]BSPNode,
+        sweep_path: *[]IntersectionInfo.Ray,
     ) void {
         const dt = rl.getFrameTime();
 
@@ -77,10 +78,11 @@ pub const Input = struct {
         self.velocity = self.velocity.scale(1 - friction_factor * dt);
 
         const first_try_position = camera.camera.position.add(self.velocity.scale(dt));
-        const second_try_position = self.updatePlayerCollision(allocator, camera, first_try_position, root, collision_node_path);
-        const resolved_position = self.updatePlayerCollision(allocator, camera, second_try_position, root, null);
+        const second_try_position = self.updatePlayerCollision(allocator, camera, first_try_position, root, collision_node_path, sweep_path);
+        // const resolved_position = self.updatePlayerCollision(allocator, camera, second_try_position, root, null);
 
-        camera.camera.position = resolved_position;
+        // camera.camera.position = resolved_position;
+        camera.camera.position = second_try_position;
     }
 
     fn updatePlayerCollision(
@@ -90,6 +92,7 @@ pub const Input = struct {
         try_position: rl.Vector3,
         root: BSPNode,
         collision_node_path: ?*[]BSPNode,
+        sweep_path: ?*[]IntersectionInfo.Ray,
     ) rl.Vector3 {
         const dt = rl.getFrameTime();
 
@@ -104,6 +107,7 @@ pub const Input = struct {
         )) |_| brk: {
             const node = intersection_info.node orelse break :brk;
             if (collision_node_path) |cnp| cnp.* = intersection_info.node_path.toOwnedSlice(intersection_info.allocator) catch unreachable;
+            if (sweep_path) |sp| sp.* = intersection_info.sweep_path.toOwnedSlice(intersection_info.allocator) catch unreachable;
             const node_normal = node.branch.splitter_normal;
             const overbounce = rl.Vector3.init(node_normal.x, 0, node_normal.y).scale(0.001);
             const velocity_2D = rl.Vector2.init(self.velocity.x, self.velocity.z);

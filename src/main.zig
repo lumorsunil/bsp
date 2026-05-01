@@ -44,6 +44,7 @@ const Game = struct {
     object_cube_ends_at: f64 = 0,
     intersection_info: IntersectionInfo,
     collision_node_path: []BSPNode = &.{},
+    sweep_path: []IntersectionInfo.Ray = &.{},
     inspect_node_i: ?usize = null,
 
     const seed = 1;
@@ -103,7 +104,7 @@ const Game = struct {
         }
 
         self.input.updateInput(&self.camera);
-        self.input.updatePhysics(self.allocator, &self.camera, bsp.root.*, &self.collision_node_path);
+        self.input.updatePhysics(self.allocator, &self.camera, bsp.root.*, &self.collision_node_path, &self.sweep_path);
         self.camera.update();
 
         if (self.input.toggle_map) {
@@ -146,6 +147,7 @@ const Game = struct {
 
         drawCollisionNodePath(self.collision_node_path);
         drawDebugRayPath(self.intersection_info.ray_path.items);
+        drawDebugSweepPath(self.sweep_path);
 
         rl.endMode3D();
 
@@ -335,11 +337,34 @@ fn drawDebugRayPath(ray_path: []IntersectionInfo.Ray) void {
     const start_pos = rl.Vector3.init(ray.@"0".x, 0, ray.@"0".y);
     const end_pos = rl.Vector3.init(ray.@"1".x, 0, ray.@"1".y);
     const v = end_pos.subtract(start_pos);
-    const adj = v.normalize().scale(0.1);
+    const adj_s = @max(@min(0.1, v.length() / 3), 0.03);
+    const adj = v.normalize().scale(adj_s);
+    const cube_size = rl.Vector3.one().scale(adj_s * 2);
     const start_cube_pos = start_pos.add(adj);
     const end_cube_pos = end_pos.subtract(adj);
 
-    rl.drawCubeV(start_cube_pos, .init(0.2, 0.2, 0.2), .red);
-    rl.drawCubeV(end_cube_pos, .init(0.2, 0.2, 0.2), .green);
+    rl.drawCubeV(start_cube_pos, cube_size, .red);
+    rl.drawCubeV(end_cube_pos, cube_size, .green);
+    rl.drawLine3D(start_pos, end_pos, .purple);
+}
+
+fn drawDebugSweepPath(sweep_path: []IntersectionInfo.Ray) void {
+    const radius = 0.3;
+    const t = rl.getTime();
+    const i: usize = @mod(@as(usize, @intFromFloat(@floor(t))), sweep_path.len + 1);
+    if (i == 0) return;
+    const ray = sweep_path[i - 1];
+
+    const start_pos = rl.Vector3.init(ray.@"0".x, 0, ray.@"0".y);
+    const end_pos = rl.Vector3.init(ray.@"1".x, 0, ray.@"1".y);
+    const v = end_pos.subtract(start_pos);
+    const adj_s = @max(@min(radius, v.length() / 3), 0.03);
+    const adj = v.normalize().scale(adj_s);
+    const sphere_size = adj_s * 2;
+    const start_cube_pos = start_pos.add(adj);
+    const end_cube_pos = end_pos.subtract(adj);
+
+    rl.drawSphereWires(start_cube_pos, sphere_size, 15, 15, .red);
+    rl.drawSphereWires(end_cube_pos, sphere_size, 15, 15, .green);
     rl.drawLine3D(start_pos, end_pos, .purple);
 }
